@@ -222,6 +222,19 @@ soccminer10_1 <- soccminer10_1[,c("Project",
                                   "class.Class_Line_No + class.Class_LOC",
                                   "Method_Line_No",
                                   "method.Method_Line_No + method.Method_LOC")]
+names(soccminer10_1)[names(soccminer10_1) == "commenttext"] <- "Original_Comment_Content"
+names(soccminer10_1)[names(soccminer10_1) == "Comment_Content"] <- "SoCCMiner_Comment_Content"
+names(soccminer10_1)[names(soccminer10_1) == "classification"] <- "SATD_Category"
+names(soccminer10_1)[names(soccminer10_1) == "Class_Line_No"] <- "Class_StartLine"
+names(soccminer10_1)[names(soccminer10_1) == "Class_Line_No"] <- "Class_StartLine"
+names(soccminer10_1)[names(soccminer10_1) == "class.Class_Line_No + class.Class_LOC"] <- "Class_EndLine"
+names(soccminer10_1)[names(soccminer10_1) == "Method_Line_No"] <- "Method_StartLine"
+names(soccminer10_1)[names(soccminer10_1) == "method.Method_Line_No + method.Method_LOC"] <- "Method_EndLine"
+names(soccminer10_1)[names(soccminer10_1) == "Priority"] <- "Rule_Priority"
+names(soccminer10_1)[names(soccminer10_1) == "Description"] <- "Rule_Description"
+names(soccminer10_1)[names(soccminer10_1) == "Begin_Line"] <- "Rule_Begin_Line"
+names(soccminer10_1)[names(soccminer10_1) == "End_Line"] <- "Rule_End_Line"
+
 write.csv2(soccminer10_1, file = "./save/final_replication_dataset_v2.csv")
 # Counting the number of comments remaining in the dataset
 # by removing PMD-data, which creates duplicates of comments due to different
