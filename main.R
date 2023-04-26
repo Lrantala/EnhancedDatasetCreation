@@ -433,7 +433,8 @@ data_path <- "./data/"
 
 
 # First we load all the data we did with the methods and look for the direct matches
-m2017satd <- as.data.frame(data.table::fread(file = "./data/cleaned_technical_debt_dataset.csv", sep = ",", header = TRUE))
+m2017satd <- as.data.frame(data.table::fread(file = "./data/cleaned_technical_debt_dataset.csv", sep = ",", header = TRUE,
+                                             strip.white = TRUE))
 m2017empty_comments <- m2017satd[(m2017satd$clean_comment == ""),]
 table(m2017empty_comments$projectname)
 
@@ -442,7 +443,8 @@ table(m2017satd$classification)
 #m2017satd$id <- 1:(nrow(m2017satd))
 
 # This is now the new data, only with comments and project names
-soccminer10 <- as.data.frame(data.table::fread(file = "./data/cleaned_soccminer_10_projects_v2_comment_file_project.csv", sep = ",", header = TRUE))
+soccminer10 <- as.data.frame(data.table::fread(file = "./data/cleaned_soccminer_10_projects_v3.csv", sep = ",", header = TRUE,
+                                               strip.white = TRUE))
 
 # Count how many empty columns there are in Soccminer
 soccminer10 <- soccminer10[!(soccminer10$Clean_Comment_Content == ""),]
@@ -480,13 +482,13 @@ table(m2017satd$projectname, m2017satd$classification)
 table(soccminer10$Project)
 
 # Done: 
-# +Jmeter
-# +nt
-# +ArgoUML
-# +Columba
+# Jmeter
+# Ant
+# ++ArgoUML
+# Columba
 # EMF
-# +Hibernate
-# +jEdit
+# Hibernate
+# jEdit
 # jFreechart
 # jruby
 # Squirrel
@@ -494,8 +496,9 @@ table(soccminer10$Project)
 #Taking the projects one by one
 # Removing duplicate comments
 # Remove empty comments
-project_name = "apache-ant-1.7.0"
+project_name = "apache-jmeter-2.10"
 mjedit <- m2017satd[m2017satd$projectname == project_name,]
+
 # taking only the ones labeled as satd
 mjedit <- mjedit[mjedit$classification != "WITHOUT_CLASSIFICATION",]
 #mjedit <- mjedit[!duplicated(mjedit),]
@@ -510,8 +513,42 @@ sjedit <- sjedit[!(sjedit$Clean_Comment_Content == ""),]
 rownames(sjedit) <- NULL
 sjedit$srowid <- rownames(sjedit)
 
-# Finding the direct matches based on solely on comment content
-#direct_matches <- inner_join(sjedit, mjedit, by=c("Clean_Comment_Content"="clean_comment"))
+# Taking out the duplicates from both sets, based on the raw
+# comment. We can match these later back, but they are not needed for classification.
+mjedit_dupl <- mjedit[duplicated(mjedit$commenttext)|duplicated(mjedit$commenttext, fromLast = TRUE),]
+mjedit <- mjedit[!(mjedit$mrowid %in% mjedit_dupl$mrowid),]
+
+sjedit_dupl <- sjedit[duplicated(sjedit$Comment_Content)|duplicated(sjedit$Comment_Content, fromLast = TRUE),]
+sjedit <- sjedit[!(sjedit$srowid %in% sjedit_dupl$srowid),]
+
+# Take out one comment from each duplicated group. This is inserted back to the df from
+# which the corpus is being built. The rest are kept for posterity.
+
+#maldo
+mjedit_dupl_1_each_group <- mjedit_dupl %>% group_by(commenttext) %>% top_n(1, mrowid) %>% ungroup()
+#mjedit_dupl <- mjedit_dupl[!(mjedit_dupl$mrowid %in% mjedit_dupl_1_each_group$mrowid),]
+
+#mjedit_dupl <- mjedit_dupl %>% group_by(commenttext) %>%
+#  summarise(mrowid = paste(mrowid, collapse=","))
+
+mjedit <- full_join(mjedit, mjedit_dupl_1_each_group)
+rownames(mjedit) <- NULL
+mjedit$corpusid <- rownames(mjedit)
+
+#soccminer
+sjedit_dupl_1_each_group <- sjedit_dupl %>% group_by(Comment_Content) %>% top_n(1, srowid) %>% ungroup()
+#sjedit_dupl <- sjedit_dupl[!(sjedit_dupl$srowid %in% sjedit_dupl_1_each_group$srowid),]
+
+#sjedit_dupl <- sjedit_dupl %>% group_by(Comment_Content) %>%
+#  summarise(srowid = paste(srowid, collapse=","))
+
+sjedit <- full_join(sjedit, sjedit_dupl_1_each_group)
+rownames(sjedit) <- NULL
+sjedit$corpusid <- rownames(sjedit)
+
+
+
+# Finding the direct matches based on solely on clean comment content
 direct_matches <- inner_join(sjedit, mjedit, by=c("Comment_Content"="commenttext"))
 direct_matches$score <- 1
 direct_matches$match <- 1
@@ -525,6 +562,22 @@ sjedit_no_match <- sjedit[!(sjedit$srowid %in% direct_matches$srowid),]
 
 # Possible_direct_matches which match on cleaned comment contents
 direct_content_matches <- inner_join(sjedit_no_match, mjedit_no_match, by=c("Clean_Comment_Content"="clean_comment"))
+direct_content_matches$clean_comment <- direct_content_matches$Clean_Comment_Content
+direct_content_matches$match <- 1
+direct_content_matches$match <- ifelse(direct_content_matches$match == 1, 1, ifelse((grepl("//", direct_content_matches$commenttext) 
+                                                                             & grepl("//", direct_content_matches$Comment_Content)), "", 0))
+# These content matches needs to be checked right away and labeled
+# Saving the pattern matches for in between check and match marking
+fwrite(direct_content_matches, file =paste0("./direct_content_matches/", project_name, "_direct_content_matches.csv"), sep = ";")
+
+##############################
+# MANUAL LABELING PART HERE ##
+##############################
+# Read the pattern matches back after updating the matches
+direct_content_matches <- fread(file =paste0("./direct_content_matches/", project_name, "_direct_content_matches.csv"), 
+                              sep = ";",
+                              colClasses = sapply(direct_content_matches, class))
+direct_content_matches <- direct_content_matches[direct_content_matches$match == 1,]
 
 # Removing the content  matches from the data
 mjedit_no_match <- mjedit_no_match[!(mjedit_no_match$mrowid %in% direct_content_matches$mrowid),]
@@ -553,8 +606,8 @@ sjedit_no_match <- sjedit_no_match[!(sjedit_no_match$srowid %in% direct_content_
 #                                    "Comment_Content")]
 
 # Removing the direct matches from the data
-mjedit_no_match <- mjedit[!(mjedit$mrowid %in% direct_matches$mrowid),]
-sjedit_no_match <- sjedit[!(sjedit$srowid %in% direct_matches$srowid),]
+#mjedit_no_match <- mjedit[!(mjedit$mrowid %in% direct_matches$mrowid),]
+#sjedit_no_match <- sjedit[!(sjedit$srowid %in% direct_matches$srowid),]
 
 #mjedit <- mjedit[!(mjedit$commenttext %in% direct_matches$Comment_Content),]
 #sjedit <- sjedit[!(sjedit$Comment_Content %in% direct_matches$Comment_Content),]
@@ -575,23 +628,31 @@ total_corpus <- TextReuseCorpus(text = c(mjedit_no_match$clean_comment, sjedit_n
 buckets <- lsh(total_corpus, bands = 50, progress = TRUE)
 #buckets <- lsh(total_corpus, bands = 80, progress = TRUE)
 
-#saveRDS(buckets, file = paste0(project_name, "_buckets_no_dup.rds"))
+saveRDS(buckets, file = paste0(project_name, "_buckets_latest.rds"))
+#buckets <- readRDS(file = paste0(project_name, "_buckets_latest.rds"))
 
+# This calculates the candidates from the buckets at once
 candidates <- lsh_candidates(buckets)
-#saveRDS(candidates, file = "jEdit_candidates_no_dup_dirmatch.rds")
-#candidates <- readRDS(file = "jEdit_candidates_no_dup_dirmatch.rds")
-#Removing useless data from memory
-
 scores <- lsh_compare(candidates, total_corpus, jaccard_similarity, progress = TRUE)
-#rm(total_corpus)
-# Comparisons vs. pairwise matches:
-# Ant: 1,038,823 / 1,249,500 = 83.1%
+
+# Comparisons / Pairwise
+# Jmeter    68,537  / 628,320
+# Ant       359,262 / 231,776
+# ArgoUML   707,089 / 1,651,430 = 0.4282
+# Columba   193,727 / 335,520
+# EMF       2,388,380 / 73,536
+# Hibernate
+# jEdit
+# jFreechart
+# jruby
+# Squirrel
+
 
 
 gc()
-#saveRDS(scores, file = paste0("./save2/", project_name, "_scores_with_dup_latest.rds"))
-#saveRDS(direct_matches, file = paste0("./save2/", project_name, "_direct_with_dup_latest.rds"))
-#saveRDS(direct_content_matches, file = paste0("./save2/", project_name, "_direct_content_with_dup_latest.rds"))
+saveRDS(scores, file = paste0("./save2/", project_name, "_scores_with_dup_latest.rds"))
+saveRDS(direct_matches, file = paste0("./save2/", project_name, "_direct_with_dup_latest.rds"))
+saveRDS(direct_content_matches, file = paste0("./save2/", project_name, "_direct_content_with_dup_latest.rds"))
 
 #Reading
 scores <- readRDS(file = paste0("./save2/", project_name, "_scores_with_dup_latest.rds"))
@@ -607,26 +668,29 @@ scores$bnum <- gsub("^doc-*", "", scores$b)
 # We always put Maldonado data first in the corpus, 
 # so that the doc-1 matches row 1 from Maldonado and so on.
 rownames(mjedit_no_match) <- NULL
-mjedit_no_match$rowid <- rownames(mjedit_no_match)
+#mjedit_no_match$rowid <- rownames(mjedit_no_match)
+mjedit_no_match$corpusid <- rownames(mjedit_no_match)
 
 # Soccminer is always placed after Maldonado into the corpus,
 # so the first doc-number is number of rows in Maldonado plus 1
 rownames(sjedit_no_match) <- (nrow(mjedit_no_match)+1):(nrow(mjedit_no_match) + nrow(sjedit_no_match))
-sjedit_no_match$rowid <- rownames(sjedit_no_match)
+#sjedit_no_match$rowid <- rownames(sjedit_no_match)
+sjedit_no_match$corpusid <- rownames(sjedit_no_match)
 
 # Exclude all the pairs, which have rowids either only in Maldonado or Soccminer
 # We do not wish to match these within the datasets, only with each other.
-scores$maldo <- ifelse(scores$anum %in% mjedit_no_match$rowid & scores$bnum %in% mjedit_no_match$rowid, NA, "OK")
+# UPDATE 14.4. changed every rowid to corpusid. Rowid is matching the original mjedit, sjedit
+scores$maldo <- ifelse(scores$anum %in% mjedit_no_match$corpusid & scores$bnum %in% mjedit_no_match$corpusid, NA, "OK")
 table(scores$maldo)
 scores <- scores[!is.na(scores$maldo),]
-scores$socc <- ifelse(scores$anum %in% sjedit_no_match$rowid & scores$bnum %in% sjedit_no_match$rowid, NA, "OK")
+scores$socc <- ifelse(scores$anum %in% sjedit_no_match$corpusid & scores$bnum %in% sjedit_no_match$corpusid, NA, "OK")
 table(scores$socc)
 scores <- scores[!is.na(scores$socc),]
 scores <- scores %>% select(-maldo, -socc, -a, -b)
 
 # Join the rows which match maldonado
-scores <- left_join(scores, mjedit_no_match, by=c("anum"="rowid"))
-scores <- left_join(scores, mjedit_no_match, by=c("bnum"="rowid"))
+scores <- left_join(scores, mjedit_no_match, by=c("anum"="corpusid"))
+scores <- left_join(scores, mjedit_no_match, by=c("bnum"="corpusid"))
 scores <- scores %>% 
   mutate(projectname = coalesce(projectname.x, projectname.y)) %>% 
   select(-projectname.x, -projectname.y) %>%
@@ -640,56 +704,56 @@ scores <- scores %>%
   select(-mrowid.x,-mrowid.y)
 
 #Join the rows which match soccminer
-scores <- left_join(scores, sjedit_no_match, by=c("anum"="rowid"))
-scores <- left_join(scores, sjedit_no_match, by=c("bnum"="rowid"))
-#scores <- left_join(scores, sjedit_no_match[,c("Clean_Comment_Content", "Comment_Content", "comment_key", "srowid", "rowid")], by=c("anum"="rowid"))
-#scores <- left_join(scores, sjedit_no_match[,c("Clean_Comment_Content", "Comment_Content", "comment_key", "srowid", "rowid")], by=c("bnum"="rowid"))
+#scores <- left_join(scores, sjedit_no_match, by=c("anum"="rowid"))
+#scores <- left_join(scores, sjedit_no_match, by=c("bnum"="rowid"))
+scores <- left_join(scores, sjedit_no_match[,c("Clean_Comment_Content", "Comment_Content", "comment_key", "srowid", "corpusid")], by=c("anum"="corpusid"))
+scores <- left_join(scores, sjedit_no_match[,c("Clean_Comment_Content", "Comment_Content", "comment_key", "srowid", "corpusid")], by=c("bnum"="corpusid"))
 scores <- scores %>% mutate(Clean_Comment_Content = coalesce(Clean_Comment_Content.x,Clean_Comment_Content.y)) %>% 
   select(-Clean_Comment_Content.x,-Clean_Comment_Content.y) %>%
   mutate(srowid = coalesce(srowid.x,srowid.y)) %>% 
   select(-srowid.x,-srowid.y) %>%
   mutate(comment_key = coalesce(comment_key.x,comment_key.y)) %>% 
   select(-comment_key.x,-comment_key.y) %>%
-  mutate(Comment_Assoc_Block_Node = coalesce(Comment_Assoc_Block_Node.x,Comment_Assoc_Block_Node.y)) %>% 
-  select(-Comment_Assoc_Block_Node.x,-Comment_Assoc_Block_Node.y) %>%
-  mutate(Comment_Category = coalesce(Comment_Category.x, Comment_Category.y)) %>% 
-  select(-Comment_Category.x,-Comment_Category.y) %>%
+  #mutate(Comment_Assoc_Block_Node = coalesce(Comment_Assoc_Block_Node.x,Comment_Assoc_Block_Node.y)) %>% 
+  #select(-Comment_Assoc_Block_Node.x,-Comment_Assoc_Block_Node.y) %>%
+  #mutate(Comment_Category = coalesce(Comment_Category.x, Comment_Category.y)) %>% 
+  #select(-Comment_Category.x,-Comment_Category.y) %>%
   mutate(Comment_Content = coalesce(Comment_Content.x, Comment_Content.y)) %>% 
-  select(-Comment_Content.x,-Comment_Content.y) %>%
-  mutate(Comment_First_Element_In = coalesce(Comment_First_Element_In.x, Comment_First_Element_In.y)) %>% 
-  select(-Comment_First_Element_In.x,-Comment_First_Element_In.y) %>%
-  mutate(Comment_Immediate_Preceding_Code = coalesce(Comment_Immediate_Preceding_Code.x, Comment_Immediate_Preceding_Code.y)) %>% 
-  select(-Comment_Immediate_Preceding_Code.x,-Comment_Immediate_Preceding_Code.y) %>%
-  mutate(Comment_Immediate_Succeeding_Code = coalesce(Comment_Immediate_Succeeding_Code.x, Comment_Immediate_Succeeding_Code.y)) %>% 
-  select(-Comment_Immediate_Succeeding_Code.x,-Comment_Immediate_Succeeding_Code.y) %>%
-  mutate(Comment_Last_Element_In = coalesce(Comment_Last_Element_In.x, Comment_Last_Element_In.y)) %>% 
-  select(-Comment_Last_Element_In.x,-Comment_Last_Element_In.y) %>%
-  mutate(Comment_Level = coalesce(Comment_Level.x, Comment_Level.y)) %>% 
-  select(-Comment_Level.x,-Comment_Level.y) %>%
-  mutate(Comment_Line_No = coalesce(Comment_Line_No.x, Comment_Line_No.y)) %>% 
-  select(-Comment_Line_No.x,-Comment_Line_No.y) %>%
-  mutate(Comment_Parent_Identifier = coalesce(Comment_Parent_Identifier.x, Comment_Parent_Identifier.y)) %>% 
-  select(-Comment_Parent_Identifier.x,-Comment_Parent_Identifier.y) %>%
-  mutate(Comment_Parent_Trace = coalesce(Comment_Parent_Trace.x, Comment_Parent_Trace.y)) %>% 
-  select(-Comment_Parent_Trace.x,-Comment_Parent_Trace.y) %>%
-  mutate(Comment_Preceding_Node = coalesce(Comment_Preceding_Node.x, Comment_Preceding_Node.y)) %>% 
-  select(-Comment_Preceding_Node.x,-Comment_Preceding_Node.y) %>%
-  mutate(Comment_Succeeding_Node = coalesce(Comment_Succeeding_Node.x, Comment_Succeeding_Node.y)) %>% 
-  select(-Comment_Succeeding_Node.x,-Comment_Succeeding_Node.y) %>%
-  mutate(Comment_Source_File = coalesce(Comment_Source_File.x, Comment_Source_File.y)) %>% 
-  select(-Comment_Source_File.x,-Comment_Source_File.y) %>%
-  mutate(Comment_SubCategory = coalesce(Comment_SubCategory.x, Comment_SubCategory.y)) %>% 
-  select(-Comment_SubCategory.x,-Comment_SubCategory.y) %>%
-  mutate(Comment_SubCatg_Type = coalesce(Comment_SubCatg_Type.x, Comment_SubCatg_Type.y)) %>% 
-  select(-Comment_SubCatg_Type.x,-Comment_SubCatg_Type.y) %>%
-  mutate(Comment_Type = coalesce(Comment_Type.x, Comment_Type.y)) %>% 
-  select(-Comment_Type.x,-Comment_Type.y) %>%
-  mutate(Project_ID = coalesce(Project_ID.x, Project_ID.y)) %>% 
-  select(-Project_ID.x,-Project_ID.y) %>%
-  mutate(file_key = coalesce(file_key.x, file_key.y)) %>% 
-  select(-file_key.x,-file_key.y) %>%
-  mutate(Project = coalesce(Project.x, Project.y)) %>% 
-  select(-Project.x,-Project.y)
+  select(-Comment_Content.x,-Comment_Content.y)
+  #mutate(Comment_First_Element_In = coalesce(Comment_First_Element_In.x, Comment_First_Element_In.y)) %>% 
+  #select(-Comment_First_Element_In.x,-Comment_First_Element_In.y) %>%
+  #mutate(Comment_Immediate_Preceding_Code = coalesce(Comment_Immediate_Preceding_Code.x, Comment_Immediate_Preceding_Code.y)) %>% 
+  #select(-Comment_Immediate_Preceding_Code.x,-Comment_Immediate_Preceding_Code.y) %>%
+  #mutate(Comment_Immediate_Succeeding_Code = coalesce(Comment_Immediate_Succeeding_Code.x, Comment_Immediate_Succeeding_Code.y)) %>% 
+  #select(-Comment_Immediate_Succeeding_Code.x,-Comment_Immediate_Succeeding_Code.y) %>%
+  #mutate(Comment_Last_Element_In = coalesce(Comment_Last_Element_In.x, Comment_Last_Element_In.y)) %>% 
+  #select(-Comment_Last_Element_In.x,-Comment_Last_Element_In.y) %>%
+  #mutate(Comment_Level = coalesce(Comment_Level.x, Comment_Level.y)) %>% 
+  #select(-Comment_Level.x,-Comment_Level.y) %>%
+  #mutate(Comment_Line_No = coalesce(Comment_Line_No.x, Comment_Line_No.y)) %>% 
+#select(-Comment_Line_No.x,-Comment_Line_No.y) %>%
+#mutate(Comment_Parent_Identifier = coalesce(Comment_Parent_Identifier.x, Comment_Parent_Identifier.y)) %>% 
+#select(-Comment_Parent_Identifier.x,-Comment_Parent_Identifier.y) %>%
+#mutate(Comment_Parent_Trace = coalesce(Comment_Parent_Trace.x, Comment_Parent_Trace.y)) %>% 
+#select(-Comment_Parent_Trace.x,-Comment_Parent_Trace.y) %>%
+#mutate(Comment_Preceding_Node = coalesce(Comment_Preceding_Node.x, Comment_Preceding_Node.y)) %>% 
+#select(-Comment_Preceding_Node.x,-Comment_Preceding_Node.y) %>%
+#mutate(Comment_Succeeding_Node = coalesce(Comment_Succeeding_Node.x, Comment_Succeeding_Node.y)) %>% 
+#select(-Comment_Succeeding_Node.x,-Comment_Succeeding_Node.y) %>%
+#mutate(Comment_Source_File = coalesce(Comment_Source_File.x, Comment_Source_File.y)) %>% 
+#select(-Comment_Source_File.x,-Comment_Source_File.y) %>%
+#mutate(Comment_SubCategory = coalesce(Comment_SubCategory.x, Comment_SubCategory.y)) %>% 
+#select(-Comment_SubCategory.x,-Comment_SubCategory.y) %>%
+#mutate(Comment_SubCatg_Type = coalesce(Comment_SubCatg_Type.x, Comment_SubCatg_Type.y)) %>% 
+#select(-Comment_SubCatg_Type.x,-Comment_SubCatg_Type.y) %>%
+#mutate(Comment_Type = coalesce(Comment_Type.x, Comment_Type.y)) %>% 
+#select(-Comment_Type.x,-Comment_Type.y) %>%
+#mutate(Project_ID = coalesce(Project_ID.x, Project_ID.y)) %>% 
+#select(-Project_ID.x,-Project_ID.y) %>%
+  #mutate(file_key = coalesce(file_key.x, file_key.y)) %>% 
+  #select(-file_key.x,-file_key.y) %>%
+  #mutate(Project = coalesce(Project.x, Project.y)) %>% 
+  #select(-Project.x,-Project.y)
   
 
 # Remove the rows, not anymore needed. Every comment which is similar is thought
@@ -711,6 +775,9 @@ table(mjedit$classification)
 scores_perfect_match <- scores[scores$score == 1,]
 table(scores_perfect_match$classification)  
 scores_perfect_match$match <- 1
+
+
+
 # This checks if the unprocessed string from Maldonado dataset is present in Soccminer and vice versa.
 #scores_pattern_match <- scores[scores$score != 1,]
 scores_pattern_match <- scores[!(scores$mrowid %in% scores_perfect_match$mrowid |
@@ -718,22 +785,40 @@ scores_pattern_match <- scores[!(scores$mrowid %in% scores_perfect_match$mrowid 
 
 
 scores_pattern_match$match <- ifelse(mapply(grepl, 
-                                            pattern= scores_pattern_match$commenttext, 
-                                            x=scores_pattern_match$Comment_Content,fixed=TRUE), 1,
+                                            pattern= scores_pattern_match$clean_comment, 
+                                            x=scores_pattern_match$Clean_Comment_Content,fixed=TRUE), 1,
                                      ifelse(mapply(grepl, 
-                                                   pattern= scores_pattern_match$Comment_Content, 
-                                                   x=scores_pattern_match$commenttext,fixed=TRUE), 1, 0))
+                                                   pattern= scores_pattern_match$Clean_Comment_Content, 
+                                                   x=scores_pattern_match$clean_comment,fixed=TRUE), 1, 0))
 
 
 table(scores_pattern_match$match)
 table(scores_pattern_match$classification, scores_pattern_match$match == 1)
 
-# Taking away the pairs that already had a perfect match
-#scores_pattern_match <- scores_pattern_match[!(scores_pattern_match$mrowid %in% scores_perfect_match$mrowid |
-#                                                 scores_pattern_match$srowid %in% scores_perfect_match$srowid),]
+# Lastly, we check for whether the raw comments have // in them both or not,
+# as this weeds out //-comments matches purely matched to /* */
+
+scores_pattern_match$match <- ifelse(scores_pattern_match$match == 1, 1, ifelse((grepl("//", scores_pattern_match$commenttext) 
+                                                                                 & grepl("//", scores_pattern_match$Comment_Content)), "", 0))
+
+###################
+# SLOW DOWN HERE ##
+###################
+
 
 # Saving the pattern matches for in between check and match marking
-#fwrite(scores_pattern_match, file =paste0("./save2/csv/pattern/", project_name, "_pattern_match.csv"), sep = ";")
+fwrite(scores_pattern_match, file =paste0("./pattern/", project_name, "_pattern_match.csv"), sep = ";")
+
+##############################
+# MANUAL LABELING PART HERE ##
+##############################
+# Read the pattern matches back after updating the matches
+scores_pattern_match <- fread(file =paste0("./pattern/", project_name, "_pattern_match.csv"), 
+                              sep = ";",
+                              colClasses = sapply(scores_pattern_match, class))
+# Weed out the pattern matches that did not really match
+scores_pattern_match <- scores_pattern_match[scores_pattern_match$match == 1,]
+scores_pattern_match$match <- as.numeric(scores_pattern_match$match)
 
 # Checking out the scores, which were not present in either perfect matches or
 # on the pattern matches
@@ -743,44 +828,110 @@ scores_no_match <- scores[!(scores$mrowid %in% scores_perfect_match$mrowid |
 scores_no_match <- scores_no_match[!(scores_no_match$mrowid %in% scores_pattern_match$mrowid |
                                        scores_no_match$srowid %in% scores_pattern_match$srowid),]
 
-# Read the pattern matches back after updating the matches
-scores_pattern_match <- fread(file =paste0("./save2/csv/pattern/", project_name, "_pattern_match.csv"), 
-                              sep = ";",
-                              colClasses = sapply(scores_perfect_match, class))
 
-# Weed out the pattern matches that did not really match
-scores_pattern_match <- scores_pattern_match[scores_pattern_match$match == 1,]
+
 
 # Combine perfect and partial string matches, and finally combine the direct matches
+# and direct content matches
 scores_combined_matches <- full_join(scores_perfect_match, scores_pattern_match)
 scores_combined_matches <- full_join(scores_combined_matches, direct_matches)
+scores_combined_matches <- full_join(scores_combined_matches, direct_content_matches)
 table(scores_combined_matches$classification)
 table(mjedit$classification)
 
 
+
+
 scores_missing <- mjedit[!(mjedit$mrowid %in% scores_combined_matches$mrowid),]
+
+# These need to be checked, and then the matches are combined with the
+# scores_combined_matches
 scores_missing <- scores[scores$mrowid %in% scores_missing$mrowid,]
+scores_missing$match <- 0
+
+
+fwrite(scores_missing, file =paste0("./missing/", project_name, "_missing_match.csv"), append = FALSE,
+       sep = ";", sep2 = c("",",",""))
+
 table(scores_missing$classification)
+table(scores_missing$match)
+
+spelling_test <- sjedit[sjedit$Comment_Content %like% "Note this should not be ni",]
+spelling_test <- mjedit[mjedit$commenttext %like% "Note this should not be in",]
+
+##############################
+# MANUAL LABELING PART HERE ##
+##############################
+
+scores_missing <- fread(file = paste0("./missing/", project_name, "_missing_match.csv"), 
+                         sep = ";",
+                         colClasses = sapply(scores_missing, class))
+scores_missing <- scores_missing[scores_missing$match == 1,]
+
+scores_combined_matches <- full_join(scores_combined_matches, scores_missing)
+table(scores_combined_matches$classification)
+table(mjedit$classification)
 
 
+################
+# WRITING PART #
+################
 
+fwrite(scores_combined_matches, file =paste0("./combined_matches/", project_name, "_combined_matches", ".csv"), append = FALSE,
+       sep = ";", sep2 = c("",",",""))
 
+scores_combined_matches <- fread(file = paste0("./combined_matches/", project_name, "_combined_matches.csv"), 
+                        sep = ";",
+                        colClasses = sapply(scores_combined_matches, class))
+scores_combined_matches_backup <- scores_combined_matches
 #############
 #############
-?fread
+#?fread
+
+# Combine back the multiple matches weeded out in the beginning
+# 1. First find all the matched comments in maldo and mark them as such
+mjedit_dupl_matches <- mjedit_dupl_1_each_group[mjedit_dupl_1_each_group$mrowid %in% scores_combined_matches$mrowid, ]
+
+# I guess we do not need anything else besides comment content and mrowid
+mjedit_dupl_matches <- mjedit_dupl_matches[,c("clean_comment", "mrowid")]
+
+# After that take all the matching rows from the duplicated df
+mjedit_dupl_matches <- mjedit_dupl[mjedit_dupl$clean_comment %in% mjedit_dupl_matches$clean_comment,]
+mjedit_dupl_matches <- mjedit_dupl_matches[,c("clean_comment", "mrowid")]
+
+mjedit_dupl_matches <- left_join(mjedit_dupl_matches, scores_combined_matches, by = c("clean_comment"))
+# After combining, we remove the mrowid.y (which is the unduplicated one) and rename mrowid.x to mrowid
+# Then we can bind the rows together and we have all the duplicated entries in the data.
+mjedit_dupl_matches <- mjedit_dupl_matches %>% select(-mrowid.y)
+names(mjedit_dupl_matches)[names(mjedit_dupl_matches) == "mrowid.x"] <- "mrowid"
+
+mjedit_dupl_matches <- mjedit_dupl_matches[c(names(scores_combined_matches))]
+
+# Before joining, taking out the values we used to mark each duplicated group
+#mjedit_dupl_matches <- mjedit_dupl_matches[!(mjedit_dupl_matches$mrowid %in% mjedit_dupl_1_each_group$mrowid),]
+
+mjedit_dupl_matches <- rbind(scores_combined_matches,mjedit_dupl_matches)
+mjedit_dupl_matches <- mjedit_dupl_matches[!duplicated(mjedit_dupl_matches),]
+
+
 # Filter out the pairs which have multiple matches with each other, 
 #mrow_srow_ids <- scores_combined_matches[,c("mrowid", "srowid")]
-mrow_srow_ids <- scores_combined_matches
+#mrow_srow_ids <- scores_combined_matches
 
-df <- mrow_srow_ids
+mrow_srow_ids <- mjedit_dupl_matches[,c("mrowid", "srowid")]
 
-df[,1:ncol(df)] <- NA
+#df <- mrow_srow_ids
+
+#df[,1:ncol(df)] <- NA
 
 msrow_lists <- mrow_srow_ids %>% 
   group_by(mrowid) %>%
   group_map(~.x, .keep = TRUE)
 
-df <- data.frame(mrowid=character(nrow(mrow_srow_ids)),
+temp_project_ID <- unique(sjedit$Project_ID)
+
+df <- data.frame(project_id = temp_project_ID,
+  mrowid=character(nrow(mrow_srow_ids)),
                  srowid=character(nrow(mrow_srow_ids)))
 maldo_ids <- vector()
 socc_ids <- vector()
@@ -796,13 +947,13 @@ for(i in 1:nrow(mrow_srow_ids)){
     #Check rows 
     maldonado_processed_ids <- append(maldonado_processed_ids, mrow_srow_ids$mrowid[[i]])
     df$mrowid[[i]] <- mrow_srow_ids$mrowid[[i]]
-    
     # 1. Take an id from Maldonado and add it to a vector
     maldo_id <- mrow_srow_ids$mrowid[[i]]
     maldo_ids <- append(maldo_ids,maldo_id)
     # 2. Look up all the matching Soccminer matches from the dataframe
     socc_ids <- append(socc_ids, mrow_srow_ids$srowid[mrow_srow_ids$mrowid == mrow_srow_ids$mrowid[[i]]])
     # 3. Iterate over the Soccminer matcher from the dataframe to see if they match more maldonado hits
+
     for (id in socc_ids){
       #print(paste("Soccid:" ,id))
       #print(paste("Maldoid:" ,mrow_srow_ids$mrowid[mrow_srow_ids$srowid == id]))
@@ -816,8 +967,10 @@ for(i in 1:nrow(mrow_srow_ids)){
         if(!(maldo_hit %in% maldo_ids)){
           maldo_ids <- append(maldo_ids, maldo_hit)
           maldonado_processed_ids <- append(maldonado_processed_ids, maldo_hit)
-          }
-      }
+        }
+      
+    }
+    
       # 6. Append these hits to the maldonado set
       #maldo_ids <- append(maldo_ids, mrow_srow_ids$mrowid[mrow_srow_ids$srowid == id])
     }
@@ -836,11 +989,31 @@ for(i in 1:nrow(mrow_srow_ids)){
 }
 
 df <- df[df$mrowid != "",]
-fwrite(df, file ="df_test.csv", sep = ";")
+#df <- df[df$srowid != "",]
+# Saving an individual file. These are then combined later to avoid error
+fwrite(df, file =paste0("./maldomatch_save/individual_matches/", project_name, "_maldo_socc_matches.csv"), append = FALSE,
+       sep = ";", sep2 = c("",",",""))
 
-df2 <- as.data.frame(apply(df,2, function (x) paste(unlist(x),collapse=",")))
-df2 <- data.frame(lapply(df, paste0,  "x"))
-df2 <- data.frame(lapply(df, paste(unlist(),collapse="")))
+table(mjedit_dupl_matches$classification)
+table(mjedit$classification)
+
+mjedit$clean_comment[mjedit$classification == "TEST"]
+mjedit_dupl_matches$clean_comment[mjedit_dupl_matches$classification == "TEST"]
+# Done so far:
+# Argo
+# Ant
+# Jmeter
+# Columba
+
+
+###############
+# END #########
+###############
+
+
+#df2 <- as.data.frame(apply(df,2, function (x) paste(unlist(x),collapse=",")))
+#df2 <- data.frame(lapply(df, paste0,  "x"))
+#df2 <- data.frame(lapply(df, paste(unlist(),collapse="")))
 ##############
 ##############
 
@@ -1329,3 +1502,174 @@ squirrel_count_with <- squirrel_count[squirrel_count$classification != "WITHOUT_
 wilcox.test(x = ant_count_with$Priority, y = jmeter_count_with$Priority, paired = FALSE)
 wilcox.test(x = ant_count_with$Priority, y = squirrel_count_with$Priority, paired = FALSE)
 wilcox.test(x = jmeter_count_with$Priority, y = squirrel_count_with$Priority, paired = FALSE)
+
+##################################
+#CUT OFF FROM 600+
+
+# Comparisons: made / total
+# Argo: 707,089 / 1,651,430 = 42.82%
+
+#######################################
+# MULTI-FILE VERSION
+######################################
+
+# If candidates runs out of memory, this needs to be done in several parts
+# and saved and combined separately.
+# Happened for: Argo
+
+# Argo 159 done
+# Columba 156 done
+individual_buckets <- unique(buckets$buckets)
+max_length <- length(individual_buckets)
+
+for(i in 1:max_length){
+  individual_buckets[i]
+  bucket_sample <- buckets[buckets$buckets %in% individual_buckets[i],]
+  candidates <- lsh_candidates(bucket_sample)
+  saveRDS(candidates, file =paste0("./candidates/", project_name, "/", project_name, "_candidates_", as.character(i), "_", as.character(max_length), ".rds"))
+  if (i%% 100 == 0){
+    print(i)
+  }
+  
+}
+
+
+
+max_length <- length(buckets$buckets)
+increment_length = 1000
+for(i in seq(from=1, to= max_length, by = increment_length)){
+  if (i == 1){
+    end_length <- 1000
+    
+  } else {
+    end_length <- i + (increment_length - 1)
+  }
+  
+  if ((i+ end_length) > max_length){
+    end_length <- max_length
+  }
+  #bucket_sample <- buckets[i:end_length,]
+  candidates <- lsh_candidates(buckets[i:end_length,])
+  saveRDS(candidates, file =paste0("./candidates/", project_name, "_candidates_", as.character(i), "_", as.character(end_length), ".rds"))
+  print(i)
+  rm(candidates)
+  gc()
+}
+
+for(i in seq(from=1, to=78, by=3)){
+  #  stuff, such as
+  print(i)
+}
+
+# Combine files to scores
+files = list.files(path="./candidates/", pattern="*.rds", full.names = TRUE)
+
+test_file <- readRDS(file = "./candidates/argouml-VERSION_0_34_candidates_71_516157.rds")
+
+##############
+# This part loads up the individual files, and removes the ones, where there are only
+# either maldonado or soccminer rows to be compared with one another
+##############
+
+# 1. Get all the different bucket ids
+individual_buckets <- unique(buckets$buckets)
+max_length <- length(individual_buckets)
+
+# 2. Get all the ids from Maldonado dataset, so we can check that buckets
+# have these ids as well as soccminer ids
+rownames(mjedit_no_match) <- NULL
+mjedit_no_match$rowid <- rownames(mjedit_no_match)
+
+maldo_row_ids <- paste0("doc-", mjedit_no_match$rowid)
+
+# After that we iterate over all of them and mark if the ids (buckets) only contain
+# maldo or socc texts. These are then excluded from the further analyses
+
+ok_buckets <- c()
+
+for(i in 1:10000){
+  individual_buckets[i]
+  bucket_sample <- buckets[buckets$buckets %in% individual_buckets[i],]
+  in_maldo <- ifelse(bucket_sample$doc %in% maldo_row_ids, 0, 1)
+  if (0 %in% in_maldo & 1 %in% in_maldo) {
+    ok_buckets <- append(ok_buckets, individual_buckets[i])
+  } 
+}  
+
+buckets[buckets$buckets %in% "bd4247c1e329c56f6a44d549bb88b29b",]
+
+
+bucket_sample <- buckets[buckets$buckets %in% individual_buckets[100],]
+
+maldo_row_ids <- paste0("doc-", mjedit_no_match$rowid)
+socc_row_ids <- paste0("doc-", sjedit_no_match$rowid)
+bucket_sample$maldo <- ifelse(bucket_sample$doc %in% maldo_row_ids, 0, 1)
+any(bucket_sample$maldo, 2)
+#%in% bucket_sample$maldo & 1 %in% bucket_sample$maldo
+
+if (0 %in% bucket_sample$maldo & 1 %in% bucket_sample$maldo) {
+  
+}
+
+table(bucket_sample$maldo)
+bucket_sample$socc <- ifelse(bucket_sample$doc %in% socc_row_ids, 0, 1)
+table(bucket_sample$socc)
+
+test_file$anum <- gsub("^doc-*", "", test_file$a)
+test_file$bnum <- gsub("^doc-*", "", test_file$b)
+
+test_file_backup <- test_file
+# Resetting the row numbers
+# We always put Maldonado data first in the corpus, 
+# so that the doc-1 matches row 1 from Maldonado and so on.
+rownames(mjedit_no_match) <- NULL
+mjedit_no_match$rowid <- rownames(mjedit_no_match)
+
+# Soccminer is always placed after Maldonado into the corpus,
+# so the first doc-number is number of rows in Maldonado plus 1
+rownames(sjedit_no_match) <- (nrow(mjedit_no_match)+1):(nrow(mjedit_no_match) + nrow(sjedit_no_match))
+sjedit_no_match$rowid <- rownames(sjedit_no_match)
+
+test_file$maldo <- ifelse(test_file$anum %in% mjedit_no_match$rowid & test_file$bnum %in% mjedit_no_match$rowid, NA, "OK")
+table(test_file$maldo)
+test_file <- test_file[!is.na(test_file$maldo),]
+test_file$socc <- ifelse(test_file$anum %in% sjedit_no_match$rowid & test_file$bnum %in% sjedit_no_match$rowid, NA, "OK")
+table(test_file$socc)
+test_file <- test_file[!is.na(test_file$socc),]
+test_file <- test_file[,-c(4:7)]
+scores <- scores %>% select(-maldo, -socc, -a, -b)
+
+scores_part <- lsh_compare(test_file, total_corpus, jaccard_similarity, progress = TRUE)
+
+################
+#################
+
+
+
+for(i in 1:max_length){
+  #myfiles = do.call(rbind, lapply(files, function(x) read.csv2(x, stringsAsFactors = FALSE)))
+  myfiles = do.call(rbind, lapply(files, function(x) readRDS(x)))
+  myfiles <- unique(myfiles)
+  scores_part <- lsh_compare(myfiles, total_corpus, jaccard_similarity, progress = TRUE)
+  
+  if (i == 1){
+    scores <- scores_part
+    
+  } else {
+    scores <- rbind(scores, scores_part)
+    
+  }
+  
+}
+
+###########
+# END OF MULTIPLE FILE PART
+##########
+
+
+#rm(total_corpus)
+# Comparisons vs. pairwise matches:
+# Ant: 1,025,144 /  1,244,390 = 82.38%
+# Jmeter: 664,136 / 2,240,190 = 29.65%
+# ArgoUML: / 38,252,487 = 
+# Ant OLD: 1,038,823 / 1,249,500 = 83.1%
