@@ -1046,8 +1046,9 @@ mjedit_dupl_matches[,c(clean_comment, srowid)][mjedit_dupl_matches$classificatio
 
 library(RSQLite)
 
-# Reading the dataset 
+# Creating the db connection
 con <- dbConnect(RSQLite::SQLite(), dbname = paste0("./db_export_files/", "soccminer_v3.db"))
+
 query_string <- "SELECT COUNT(*) FROM class, file, project 
                   WHERE class.Class_Source_File = file.Source_File
                   AND file.Project_ID = project.project_key
@@ -1059,6 +1060,22 @@ query_string <- "SELECT COUNT(*) FROM file, project
 
 dbGetQuery(con, query_string)
 
+# Count the number of files, classes, methods, SATD comments and non-comments, rule violations and avg. severity
+
+# Number of files per project in the db
+query_string <- "SELECT Source_File, Serialized_Project_Name FROM file, project 
+                  WHERE file.Project_ID = project.project_key"
+db_df <- dbGetQuery(con, query_string)
+db_df %>% group_by(Serialized_Project_Name) %>% summarise(n_distinct(Source_File))
+db_df %>% group_by(Serialized_Project_Name) %>% summarise(n())
+
+# Number of Classes per project in the db
+query_string <- "SELECT Class_Name, Source_File, Serialized_Project_Name FROM class, file, project 
+                  WHERE class.Class_Source_File = file.Source_File
+                  AND file.Project_ID = project.project_key"
+db_df <- dbGetQuery(con, query_string)
+db_df %>% group_by(Serialized_Project_Name) %>% summarise(n_distinct(Class_Name))
+db_df %>% group_by(Serialized_Project_Name) %>% summarise(n())
 #
 dbDisconnect(con)
 
