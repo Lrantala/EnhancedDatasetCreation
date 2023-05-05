@@ -481,22 +481,10 @@ soccminer10$Project[soccminer10$Project == "jEdit"] <- "jEdit-4.2"
 table(m2017satd$projectname, m2017satd$classification)
 table(soccminer10$Project)
 
-# Done: 
-# Jmeter
-# Ant
-# ++ArgoUML
-# Columba
-# EMF
-# Hibernate
-# jEdit
-# jFreechart
-# jruby
-# Squirrel
-
 #Taking the projects one by one
 # Removing duplicate comments
 # Remove empty comments
-project_name = "apache-jmeter-2.10"
+project_name = "sql12"
 mjedit <- m2017satd[m2017satd$projectname == project_name,]
 
 # taking only the ones labeled as satd
@@ -566,9 +554,12 @@ direct_content_matches$clean_comment <- direct_content_matches$Clean_Comment_Con
 direct_content_matches$match <- 1
 direct_content_matches$match <- ifelse(direct_content_matches$match == 1, 1, ifelse((grepl("//", direct_content_matches$commenttext) 
                                                                              & grepl("//", direct_content_matches$Comment_Content)), "", 0))
+
+direct_content_matches <- direct_content_matches %>% select (-Comment_Immediate_Preceding_Code, -Comment_Immediate_Succeeding_Code)
+
 # These content matches needs to be checked right away and labeled
 # Saving the pattern matches for in between check and match marking
-fwrite(direct_content_matches, file =paste0("./direct_content_matches/", project_name, "_direct_content_matches.csv"), sep = ";")
+#fwrite(direct_content_matches, file =paste0("./direct_content_matches/", project_name, "_direct_content_matches.csv"), sep = ";")
 
 ##############################
 # MANUAL LABELING PART HERE ##
@@ -807,7 +798,7 @@ scores_pattern_match$match <- ifelse(scores_pattern_match$match == 1, 1, ifelse(
 
 
 # Saving the pattern matches for in between check and match marking
-fwrite(scores_pattern_match, file =paste0("./pattern/", project_name, "_pattern_match.csv"), sep = ";")
+#fwrite(scores_pattern_match, file =paste0("./pattern/", project_name, "_pattern_match.csv"), sep = ";")
 
 ##############################
 # MANUAL LABELING PART HERE ##
@@ -849,15 +840,15 @@ scores_missing <- mjedit[!(mjedit$mrowid %in% scores_combined_matches$mrowid),]
 scores_missing <- scores[scores$mrowid %in% scores_missing$mrowid,]
 scores_missing$match <- 0
 
-
-fwrite(scores_missing, file =paste0("./missing/", project_name, "_missing_match.csv"), append = FALSE,
-       sep = ";", sep2 = c("",",",""))
+###
+#fwrite(scores_missing, file =paste0("./missing/", project_name, "_missing_match.csv"), append = FALSE,
+#       sep = ";", sep2 = c("",",",""))
 
 table(scores_missing$classification)
 table(scores_missing$match)
 
-spelling_test <- sjedit[sjedit$Comment_Content %like% "Note this should not be ni",]
-spelling_test <- mjedit[mjedit$commenttext %like% "Note this should not be in",]
+#spelling_test <- sjedit[sjedit$Comment_Content %like% "Note this should not be ni",]
+#spelling_test <- mjedit[mjedit$commenttext %like% "Note this should not be in",]
 
 ##############################
 # MANUAL LABELING PART HERE ##
@@ -877,8 +868,13 @@ table(mjedit$classification)
 # WRITING PART #
 ################
 
-fwrite(scores_combined_matches, file =paste0("./combined_matches/", project_name, "_combined_matches", ".csv"), append = FALSE,
-       sep = ";", sep2 = c("",",",""))
+#fwrite(scores_combined_matches, file =paste0("./combined_matches/", project_name, "_combined_matches", ".csv"), append = FALSE,
+#       sep = ";", sep2 = c("",",",""))
+
+#
+#
+#
+#project_name <- "sql12"
 
 scores_combined_matches <- fread(file = paste0("./combined_matches/", project_name, "_combined_matches.csv"), 
                         sep = ";",
@@ -991,14 +987,51 @@ for(i in 1:nrow(mrow_srow_ids)){
 df <- df[df$mrowid != "",]
 #df <- df[df$srowid != "",]
 # Saving an individual file. These are then combined later to avoid error
-fwrite(df, file =paste0("./maldomatch_save/individual_matches/", project_name, "_maldo_socc_matches.csv"), append = FALSE,
-       sep = ";", sep2 = c("",",",""))
+#fwrite(df, file =paste0("./maldomatch_save/individual_matches/", project_name, "_maldo_socc_matches.csv"), append = FALSE,
+#       sep = ";", sep2 = c("",",",""))
 
 table(mjedit_dupl_matches$classification)
 table(mjedit$classification)
 
-mjedit$clean_comment[mjedit$classification == "TEST"]
-mjedit_dupl_matches$clean_comment[mjedit_dupl_matches$classification == "TEST"]
+# SAVE THE FINAL CSV FILES FOR DB IMPORT:
+
+# Need: Project_name, comment content, maldo_id as maldo_comment_id, comment_key
+mjedit_dupl_matches$commenttext <- ifelse(mjedit_dupl_matches$commenttext == "", 
+                                          mjedit_dupl_matches$Comment_Content, 
+                                          mjedit_dupl_matches$commenttext)
+mjedit_dupl_matches$commenttext <- ifelse(is.na(mjedit_dupl_matches$commenttext), 
+                                          mjedit_dupl_matches$Comment_Content, 
+                                          mjedit_dupl_matches$commenttext)
+
+
+mjedit_dupl_matches <- mjedit_dupl_matches[,c("comment_key", 
+                                              "commenttext", 
+                                              "projectname",
+                                              "mrowid")]
+names(mjedit_dupl_matches)[names(mjedit_dupl_matches) == "comment_key"] <- "socc_comment_key"
+names(mjedit_dupl_matches)[names(mjedit_dupl_matches) == "commenttext"] <- "Maldonado_Comment_Content"
+names(mjedit_dupl_matches)[names(mjedit_dupl_matches) == "projectname"] <- "Serialized_Project_Name"
+names(mjedit_dupl_matches)[names(mjedit_dupl_matches) == "mrowid"] <- "Maldo_Comment_ID"
+mjedit_dupl_matches <- mjedit_dupl_matches[,c("socc_comment_key", 
+                                              "Serialized_Project_Name",
+                                              "Maldonado_Comment_Content",
+                                              "Maldo_Comment_ID")]
+mjedit_dupl_matches <- as.data.frame(mjedit_dupl_matches)
+mjedit_dupl_matches_backup <- mjedit_dupl_matches
+mjedit_dupl_matches$Maldo_Comment_ID <- as.integer(mjedit_dupl_matches$Maldo_Comment_ID)
+
+write.csv(mjedit_dupl_matches, file =paste0("./db_export_files/", project_name, "_export.csv"),
+          row.names = FALSE)
+library(RSQLite)
+library(DBI)
+con <- dbConnect(RSQLite::SQLite(), dbname = paste0("./db_export_files/", "soccminer_v3.db"))
+dbWriteTable(con, name="maldo_comment", value=mjedit_dupl_matches, append=TRUE)
+
+
+dbDisconnect(con)
+
+mjedit$clean_comment[mjedit$classification == "IMPLEMENTATION"]
+mjedit_dupl_matches[,c(clean_comment, srowid)][mjedit_dupl_matches$classification == "IMPLEMENTATION"]
 # Done so far:
 # Argo
 # Ant
@@ -1009,6 +1042,81 @@ mjedit_dupl_matches$clean_comment[mjedit_dupl_matches$classification == "TEST"]
 ###############
 # END #########
 ###############
+
+
+library(RSQLite)
+
+# Reading the dataset 
+con <- dbConnect(RSQLite::SQLite(), dbname = paste0("./db_export_files/", "soccminer_v3.db"))
+query_string <- "SELECT COUNT(*) FROM class, file, project 
+                  WHERE class.Class_Source_File = file.Source_File
+                  AND file.Project_ID = project.project_key
+                  AND project.Serialized_Project_Name = 'sql12'"
+
+query_string <- "SELECT COUNT(*) FROM file, project
+                  WHERE file.Project_ID = project.project_key
+                  AND project.Serialized_Project_Name = 'sql12'"
+
+dbGetQuery(con, query_string)
+
+#
+dbDisconnect(con)
+
+
+# Count the number of files, classes, methods, SATD comments and non-comments, rule violations and avg. severity
+soccminer10_count %>% group_by(Project) %>% summarise(n_distinct(Comment_Source_File))
+#Different files might have classes with same names, wo we need to group them
+soccminer10_count %>% group_by(Project) %>% summarise(n_distinct(Comment_Source_File, Class_Name))
+#Files and classes might have methods with similar names, again we group them
+soccminer10_count %>% group_by(Project) %>% summarise(n_distinct(Comment_Source_File, Class_Name, Method_Name))
+
+# Counting the number of Rule violations per project
+ruledf <- soccminer10_1 %>% group_by(Project, Rule) %>% summarise(Freq=n())
+aggregate(ruledf$Freq, by=list(Project=ruledf$Project), FUN=sum)
+
+# Counting the average priority for rule violations
+(2.99+2.93+3.00+3.00+2.98+2.95+3.01+2.98+2.98+3.00)/10
+
+# Counting the different priority counts
+ruledf <- soccminer10_1 %>% group_by(Project, Priority) %>% summarise(Freq=n())
+aggregate(ruledf$Freq, by=list(Priority=ruledf$Priority), FUN=sum)
+
+# Example of usage from ant
+ant_count <- soccminer10_count[soccminer10_count$Project == "apache-ant-1.7.0",]
+ant_count %>% summarise(n_distinct(Comment_Source_File, Class_Name, Method_Name))
+
+ant_count_with <- ant_count[ant_count$classification != "WITHOUT_CLASSIFICATION",]
+ant_count_without <- ant_count[ant_count$classification == "WITHOUT_CLASSIFICATION",]
+# Files counts
+ant_count_with %>% summarise(n_distinct(Comment_Source_File))
+ant_count_without_2 <- anti_join(ant_count_without, ant_count_with, by = c("Comment_Source_File"))
+ant_count_without_2 %>% summarise(n_distinct(Comment_Source_File))
+# Class counts
+ant_count_with %>% summarise(n_distinct(Comment_Source_File, Class_Name))
+ant_count_without_2 <- anti_join(ant_count_without, ant_count_with, by = c("Comment_Source_File", "Class_Name"))
+ant_count_without_2 %>% summarise(n_distinct(Comment_Source_File, Class_Name))
+
+# Methods counts
+ant_count_with %>% summarise(n_distinct(Comment_Source_File, Class_Name, Method_Name))
+
+ant_count_without <- ant_count[ant_count$classification == "WITHOUT_CLASSIFICATION",]
+ant_count_without <- anti_join(ant_count_without, ant_count_with, by = c("Class_Name", "Comment_Source_File", "Method_Name"))
+ant_count_without %>% summarise(n_distinct(Comment_Source_File, Class_Name, Method_Name))
+
+# Paired t-test to determine difference between satd methods and pmd results
+# again with ANT
+ant_count <- soccminer10_1[soccminer10_1$Project == "apache-ant-1.7.0",]
+ant_count_with <- ant_count[ant_count$classification != "WITHOUT_CLASSIFICATION",]
+jmeter_count <- soccminer10_1[soccminer10_1$Project == "apache-jmeter-2.10",]
+jmeter_count_with <- jmeter_count[jmeter_count$classification != "WITHOUT_CLASSIFICATION",]
+squirrel_count <- soccminer10_1[soccminer10_1$Project == "sql12",]
+squirrel_count_with <- squirrel_count[squirrel_count$classification != "WITHOUT_CLASSIFICATION",]
+
+
+wilcox.test(x = ant_count_with$Priority, y = jmeter_count_with$Priority, paired = FALSE)
+wilcox.test(x = ant_count_with$Priority, y = squirrel_count_with$Priority, paired = FALSE)
+wilcox.test(x = jmeter_count_with$Priority, y = squirrel_count_with$Priority, paired = FALSE)
+
 
 
 #df2 <- as.data.frame(apply(df,2, function (x) paste(unlist(x),collapse=",")))
